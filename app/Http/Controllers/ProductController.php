@@ -12,9 +12,27 @@ class ProductController extends Controller
     public function index(Request $request)
     {
 
-        $products =  Product::get();
+        $perPage = $request->input('per_page', 10);
+        $status = $request->input('is_active', null);
+        $sortField = $request->input('sort_field', 'name');
+        $sortDirection = $request->input('sort_direction', 'desc');
+        $filters = [];
+        if (!empty($status)) {
+            $filters[] = [
+                'id' => 'is_active',
+                'value' => $status
+            ];
+        }
+
+
+        $products =  Product::query()->when($status, function ($query, $status) {
+            if (is_array($status) && !empty($status)) {
+                $query->whereIn('is_active', $status);
+            }
+        })->orderBy($sortField, $sortDirection)->paginate(perPage: $perPage);
         return Inertia::render('Product/Index', [
-            'data' => $products
+            'data' => $products,
+            'filter' => $filters
         ]);
     }
 
@@ -27,8 +45,6 @@ class ProductController extends Controller
             'title' => 'required',
             'category_ref_id' => 'required',
         ]);
-
-
 
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();

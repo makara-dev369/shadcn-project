@@ -1,6 +1,7 @@
 <script setup>
 // import Layout from './Layout'
-import { Head } from '@inertiajs/vue3'
+import { Head, router } from '@inertiajs/vue3'
+import { route } from 'ziggy-js'
 import { Button } from '@/components/ui/button'
 // Layout
 import Layout from "../../Layout/App.vue";
@@ -15,7 +16,7 @@ import {
 } from '@tanstack/vue-table'
 import { ArrowUpDown, ChevronDown } from 'lucide-vue-next'
 
-import { h, ref } from 'vue'
+import { h, ref, computed } from 'vue'
 import DropdownAction from './DataTableDemoColumn.vue'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
@@ -35,17 +36,37 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { valueUpdater } from '@/lib/utils'
+import { ChevronRightIcon, ChevronLeftIcon, DoubleArrowLeftIcon, DoubleArrowRightIcon } from "@radix-icons/vue";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+
+import { Plus, Upload } from 'lucide-vue-next'
+
+import { Textarea } from '@/components/ui/textarea'
+import { TagsInput, TagsInputInput, TagsInputItem, TagsInputItemDelete, TagsInputItemText } from '@/components/ui/tags-input'
+import { useForm } from '@inertiajs/vue3';
+import { toast } from 'vue-sonner'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 
 //Props Data 
 const props = defineProps({
-  data: Array
+  data: Array,
+  filter: Array,
 })
-
-const data = props.data;
-
-
-
+const data = props.data.data;
 const columns = [
   {
     id: 'select',
@@ -126,10 +147,16 @@ const columns = [
 ]
 
 const sorting = ref([])
-const columnFilters = ref([])
+const columnFilters = ref(props.filter ?? [])
 const columnVisibility = ref({})
 const rowSelection = ref({})
 const expanded = ref({})
+const pageSizes = [1, 2, 3, 5, 10, 15, 30, 40, 50, 100,];
+const pagination = ref({
+  pageIndex: props.data.current_page - 1,
+  pageSize: props.data.per_page,
+})
+
 
 const table = useVueTable({
   data,
@@ -139,8 +166,78 @@ const table = useVueTable({
   getSortedRowModel: getSortedRowModel(),
   getFilteredRowModel: getFilteredRowModel(),
   getExpandedRowModel: getExpandedRowModel(),
-  onSortingChange: updaterOrValue => valueUpdater(updaterOrValue, sorting),
-  onColumnFiltersChange: updaterOrValue => valueUpdater(updaterOrValue, columnFilters),
+  pageCount: props.data.last_page,
+  manualPagination: true,
+  manualSorting: true,
+  manualFiltering: true,
+  onPaginationChange: updater => {
+    if (typeof updater === 'function') {
+      pagination.value = updater(pagination.value);
+    } else {
+      pagination.value = updater;
+    }
+    router.get(
+      route('product.index'),
+      {
+        page: pagination.value.pageIndex + 1,
+        per_page: pagination.value.pageSize,
+        sort_field: sorting.value[0]?.id,
+        sort_direction: sorting.value.length == 0 ? undefined : (sorting.value[0]?.desc ? "desc" : "asc"),
+      },
+      { preserveState: false, preserveScroll: true }
+    );
+  },
+  onSortingChange: updaterOrValue => {
+    if (typeof updaterOrValue === 'function') {
+      sorting.value = updaterOrValue(sorting.value)
+    } else {
+      sorting.value = updaterOrValue
+    }
+    let filters = {};
+    if (columnFilters.value) {
+      filters = columnFilters.value.reduce((acc, filter) => {
+        acc[filter.id] = filter.value
+        return acc
+      }, {})
+    }
+    router.get(
+      route('product.index'),
+      {
+        page: pagination.value.pageIndex + 1,
+        per_page: pagination.value.pageSize,
+        sort_field: sorting.value[0]?.id,
+        sort_direction: sorting.value.length == 0 ? undefined : (sorting.value[0]?.desc ? "desc" : "asc"),
+        ...filters
+      },
+      { preserveState: false, preserveScroll: true }
+    );
+  },
+  onColumnFiltersChange: updaterOrValue => {
+    if (typeof updaterOrValue === 'function') {
+      columnFilters.value = updaterOrValue(columnFilters.value)
+    } else {
+      columnFilters.value = updaterOrValue
+    }
+    let filters = {};
+    if (columnFilters.value) {
+      filters = columnFilters.value.reduce((acc, filter) => {
+        acc[filter.id] = filter.value
+        return acc
+      }, {})
+    }
+    router.get(
+      route('product.index'),
+      {
+        page: pagination.value.pageIndex + 1,
+        per_page: pagination.value.pageSize,
+        sort_field: sorting.value[0]?.id,
+        sort_direction: sorting.value.length == 0 ? undefined : (sorting.value[0]?.desc ? "desc" : "asc"),
+        ...filters
+
+      },
+      { preserveState: false, preserveScroll: true }
+    );
+  },
   onColumnVisibilityChange: updaterOrValue => valueUpdater(updaterOrValue, columnVisibility),
   onRowSelectionChange: updaterOrValue => valueUpdater(updaterOrValue, rowSelection),
   onExpandedChange: updaterOrValue => valueUpdater(updaterOrValue, expanded),
@@ -150,39 +247,43 @@ const table = useVueTable({
     get columnVisibility() { return columnVisibility.value },
     get rowSelection() { return rowSelection.value },
     get expanded() { return expanded.value },
+    get pagination() { return pagination.value },
   },
 })
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
+  CheckCircledIcon,
+  MinusCircledIcon,
+} from "@radix-icons/vue";
+import Filter from './Filter.vue'
+//Filter
+const filter_status = {
+  title: 'Filter Status',
+  column: 'is_active',
+  data: [
+    {
+      value: "1",
+      label: "Active",
+      icon: h(CheckCircledIcon),
+    },
+    {
+      value: "0",
+      label: "Inactive",
+      icon: h(MinusCircledIcon),
+    },
+  ]
+}
 
-import { Plus, Upload } from 'lucide-vue-next'
+const filter_toolbar = [
+  filter_status,
+];
+
+
 
 const showDialog = ref(false);
-
 const showDialogCreate = () => {
   showDialog.value = true
 }
 
-import {
-  Select, SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-
-import { Textarea } from '@/components/ui/textarea'
-import { TagsInput, TagsInputInput, TagsInputItem, TagsInputItemDelete, TagsInputItemText } from '@/components/ui/tags-input'
-import { useForm } from '@inertiajs/vue3';
-import { toast } from 'vue-sonner'
 const imageUrl = ref([]);
 const productSize = ref(['20 ml', ' 50ml']);
 
@@ -205,7 +306,6 @@ const form = useForm({
 const errors = ref({});
 
 const submit = () => {
-
   form.product_size_id = productSize.value.toString()
   form.image = imageUrl.value
   //form here
@@ -314,27 +414,34 @@ const onEdit = async (id) => {
     </template>
     <div>
       <div class="w-full">
-        <div class="flex gap-2 items-center py-4">
-          <Input class="max-w-sm" placeholder="Filter name..." :model-value="table.getColumn('name')?.getFilterValue()" @update:model-value=" table.getColumn('name')?.setFilterValue($event)" />
-          <Button variant="outline" @click="showDialogCreate">
-            <Plus class="h-4"></Plus>
-            Create New
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger as-child>
-              <Button variant="outline" class="ml-auto">
-                Columns
-                <ChevronDown class="ml-2 h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuCheckboxItem v-for="column in table.getAllColumns().filter((column) => column.getCanHide())" :key="column.id" class="capitalize" :checked="column.getIsVisible()" @update:checked="(value) => {
-                column.toggleVisibility(!!value)
-              }">
-                {{ column.id }}
-              </DropdownMenuCheckboxItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <div class="flex gap-2 items-center justify-between py-4">
+          <div class="flex gap-2">
+            <Input class="max-w-sm" placeholder="Filter name..." :model-value="table.getColumn('name')?.getFilterValue()" @update:model-value=" table.getColumn('name')?.setFilterValue($event)" />
+            <div v-for="filter in filter_toolbar" :key="filter.title">
+              <Filter :column="table.getColumn(filter.column)" :title="filter.title" :options="filter.data"></Filter>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <Button variant="outline" @click="showDialogCreate">
+              <Plus class="h-4"></Plus>
+              Create New
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button variant="outline" class="ml-auto">
+                  Columns
+                  <ChevronDown class="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuCheckboxItem v-for="column in table.getAllColumns().filter((column) => column.getCanHide())" :key="column.id" class="capitalize" :checked="column.getIsVisible()" @update:checked="(value) => {
+                  column.toggleVisibility(!!value)
+                }">
+                  {{ column.id }}
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
         <div class="rounded-md border">
           <Table>
@@ -374,13 +481,41 @@ const onEdit = async (id) => {
             {{ table.getFilteredSelectedRowModel().rows.length }} of
             {{ table.getFilteredRowModel().rows.length }} row(s) selected.
           </div>
+          <div class="flex items-center space-x-2">
+            <p class="text-sm font-medium">Rows per page</p>
+            <Select :model-value="table.getState().pagination.pageSize.toString()" @update:model-value="(value) => table.setPageSize(Number(value))">
+              <SelectTrigger class="h-8 w-[70px]">
+                <SelectValue :placeholder="table.getState().pagination.pageSize.toString()" />
+              </SelectTrigger>
+              <SelectContent side="top">
+                <SelectItem v-for="pageSize in pageSizes" :key="pageSize" :value="pageSize.toString()">
+                  {{ pageSize }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div class="space-x-2">
-            <Button variant="outline" size="sm" :disabled="!table.getCanPreviousPage()" @click="table.previousPage()">
+            <div class="flex items-center space-x-2">
+              <Button variant="outline" class="hidden h-8 w-8 p-0 lg:flex" :disabled="!table.getCanPreviousPage()" @click="table.setPageIndex(0)">
+                <DoubleArrowLeftIcon class="h-4 w-4" />
+              </Button>
+              <Button variant="outline" class="h-8 w-8 p-0" :disabled="!table.getCanPreviousPage()" @click="table.previousPage()">
+                <ChevronLeftIcon class="h-4 w-4" />
+              </Button>
+              <Button variant="outline" class="h-8 w-8 p-0" :disabled="!table.getCanNextPage()" @click="table.nextPage()">
+                <ChevronRightIcon class="h-4 w-4" />
+              </Button>
+              <Button variant="outline" class="hidden h-8 w-8 p-0 lg:flex" :disabled="!table.getCanNextPage()" @click="table.setPageIndex(table.getPageCount() - 1)">
+                <DoubleArrowRightIcon class="h-4 w-4" />
+              </Button>
+            </div>
+
+            <!-- <Button variant="outline" size="sm" :disabled="!table.getCanPreviousPage()" @click="table.previousPage()">
               Previous
             </Button>
             <Button variant="outline" size="sm" :disabled="!table.getCanNextPage()" @click="table.nextPage()">
               Next
-            </Button>
+            </Button> -->
           </div>
         </div>
       </div>
